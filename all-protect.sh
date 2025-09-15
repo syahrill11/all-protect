@@ -1,21 +1,6 @@
-#!/bin/bash
-# ============================================
-# 🛡️ PTERODACTYL ULTRA PROTECT (FIXED)
-# Anti Delete User/Server (kecuali Admin ID 1)
-# Anti Delete Node, Egg, Anti Maling Script
-# ============================================
-
-DB_NAME="panel"
-DB_USER="root"
-DB_PASS="YOUR_DB_PASSWORD"
-SUPERADMIN_ID=1
-PANEL_DIR="/var/www/pterodactyl"
-
-echo "🔒 Pasang proteksi ultra..."
-
 mysql -u $DB_USER -p$DB_PASS $DB_NAME <<EOF
 
--- 🔄 Hapus trigger lama
+-- Hapus trigger lama
 DROP TRIGGER IF EXISTS prevent_user_delete;
 DROP TRIGGER IF EXISTS prevent_server_delete;
 DROP TRIGGER IF EXISTS prevent_node_delete;
@@ -23,29 +8,34 @@ DROP TRIGGER IF EXISTS prevent_egg_delete;
 
 DELIMITER $$
 
--- ✅ Hanya admin ID 1 boleh hapus user
+-- User hanya bisa dihapus oleh Admin ID 1 (cek kolom panel user_id bukan root DB)
 CREATE TRIGGER prevent_user_delete
 BEFORE DELETE ON users
 FOR EACH ROW
 BEGIN
-  IF OLD.id != $SUPERADMIN_ID THEN
+  -- Hanya izinkan delete jika ID user = 1 (superadmin)
+  IF OLD.id = 1 THEN
+    -- biarkan
+  ELSE
     SIGNAL SQLSTATE '45000'
-    SET MESSAGE_TEXT = '❌ Hanya admin utama (ID 1) boleh hapus user!';
+    SET MESSAGE_TEXT = '❌ Hanya superadmin (ID 1) boleh hapus user!';
   END IF;
 END$$
 
--- ✅ Hanya admin ID 1 boleh hapus server
+-- Server hanya boleh dihapus jika owner_id = 1
 CREATE TRIGGER prevent_server_delete
 BEFORE DELETE ON servers
 FOR EACH ROW
 BEGIN
-  IF OLD.owner_id != $SUPERADMIN_ID THEN
+  IF OLD.owner_id = 1 THEN
+    -- biarkan
+  ELSE
     SIGNAL SQLSTATE '45000'
-    SET MESSAGE_TEXT = '❌ Hanya admin utama (ID 1) boleh hapus server!';
+    SET MESSAGE_TEXT = '❌ Hanya superadmin (ID 1) boleh hapus server!';
   END IF;
 END$$
 
--- ❌ Node tidak boleh dihapus siapapun
+-- Node tidak boleh dihapus sama sekali
 CREATE TRIGGER prevent_node_delete
 BEFORE DELETE ON nodes
 FOR EACH ROW
@@ -54,7 +44,7 @@ BEGIN
   SET MESSAGE_TEXT = '❌ Node tidak boleh dihapus!';
 END$$
 
--- ❌ Egg tidak boleh dihapus siapapun
+-- Egg tidak boleh dihapus sama sekali
 CREATE TRIGGER prevent_egg_delete
 BEFORE DELETE ON eggs
 FOR EACH ROW
@@ -65,28 +55,3 @@ END$$
 
 DELIMITER ;
 EOF
-
-echo "✅ Trigger proteksi DB dipasang!"
-
-# ==============================
-# 🕶️ ANTI MALING SCRIPT
-# ==============================
-echo "🕶️ Aktifkan Anti-Maling SC..."
-
-# Backup source penting
-BACKUP_DIR="/root/pterodactyl_backup_$(date +%F_%T)"
-mkdir -p "$BACKUP_DIR"
-cp -r "$PANEL_DIR" "$BACKUP_DIR"
-
-# Lock file agar tidak bisa di-edit/di-copy
-chattr -R +i "$PANEL_DIR"
-
-echo "✅ Source Pterodactyl diproteksi (immutable + backup dibuat di $BACKUP_DIR)"
-
-# Clear cache Laravel
-cd "$PANEL_DIR"
-php artisan config:clear
-php artisan cache:clear
-
-echo ""
-echo "🚀 PROTEKSI ULTRA AKTIF (User/Server hanya bisa dihapus Admin ID 1, Node & Egg tidak bisa, SC dilock)"
