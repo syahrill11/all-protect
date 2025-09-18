@@ -23,15 +23,23 @@ echo "Memasang trigger proteksi pada database '$DB_NAME'..."
 mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" <<SQL
 
 -- Proteksi hapus server
+SET @OWNER_ID = 1;
+
 DROP TRIGGER IF EXISTS prevent_delete_server;
 DELIMITER $$
 CREATE TRIGGER prevent_delete_server
 BEFORE DELETE ON servers
 FOR EACH ROW
 BEGIN
-  IF OLD.owner_id <> $OWNER_ID THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '❌ Tidak boleh hapus server orang lain!';
-  END IF;
+    DECLARE current_user_id INT;
+
+    -- Ambil ID user yang melakukan aksi berdasarkan USER()
+    SELECT id INTO current_user_id FROM users WHERE email = SUBSTRING_INDEX(USER(), '@', 1) LIMIT 1;
+
+    -- Jika user bukan admin dan mencoba hapus server milik orang lain, blokir
+    IF current_user_id != @OWNER_ID AND OLD.owner_id != current_user_id THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '❌ Tidak boleh hapus server orang lain!';
+    END IF;
 END$$
 DELIMITER ;
 -- ** Proteksi Edit User: Versi yang Anda inginkan (dengan catatan di atas) **
