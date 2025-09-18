@@ -1,10 +1,16 @@
 #!/bin/bash
-# Anti Delete Server + User (Pterodactyl)
+# =========================================
+# 🛡️ Proteksi Pterodactyl Anti-Delete/Edit
+# Aturan:
+#   - Semua orang TIDAK bisa hapus/edit server atau user milik ID 1.
+#   - Semua orang TIDAK bisa edit node.
+#   - Hanya ID 1 yang bisa hapus/edit server dan user lainnya.
+# =========================================
 
 ENV="/var/www/pterodactyl/.env"
 OWNER_ID=1
 
-# Ambil DB info dari .env
+# Ambil info DB dari .env
 DB_USER=$(grep DB_USERNAME $ENV | cut -d '=' -f2)
 DB_PASS=$(grep DB_PASSWORD $ENV | cut -d '=' -f2)
 DB_NAME=$(grep DB_DATABASE $ENV | cut -d '=' -f2)
@@ -12,20 +18,11 @@ DB_HOST=$(grep DB_HOST $ENV | cut -d '=' -f2)
 
 DB_HOST=${DB_HOST:-127.0.0.1}
 
-# Pasang trigger
-mysql -h $DB_HOST -u $DB_USER -p$DB_PASS $DB_NAME <<SQL
-DROP TRIGGER IF EXISTS prevent_delete_user;
-DELIMITER $$
-CREATE TRIGGER prevent_delete_user
-BEFORE DELETE ON users
-FOR EACH ROW
-BEGIN
-  IF OLD.id <> $OWNER_ID THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '❌ Tidak bisa hapus Superadmin!';
-  END IF;
-END$$
-DELIMITER ;
+echo "Memasang trigger proteksi pada database '$DB_NAME'..."
 
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" <<SQL
+
+-- Proteksi hapus server
 DROP TRIGGER IF EXISTS prevent_delete_server;
 DELIMITER $$
 CREATE TRIGGER prevent_delete_server
@@ -37,6 +34,40 @@ BEGIN
   END IF;
 END$$
 DELIMITER ;
+-- ** Proteksi Edit User: Versi yang Anda inginkan (dengan catatan di atas) **
+DROP TRIGGER IF EXISTS enforce_edit_user_by_id;
+DELIMITER $$
+CREATE TRIGGER enforce_edit_protection
+BEFORE UPDATE ON users
+FOR EACH ROW
+BEGIN
+    DECLARE user_id INT;
+    -- Set session variable
+    SET @ptero_user_id = OLD.id;
+
+    -- Retrieve the user ID from the session variable
+    SELECT @ptero_user_id INTO user_id;
+
+    -- Block the update if the user ID is not 1
+    IF user_id != 1 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = '❌ Hanya Superadmin (ID=1) yang bisa mengedit user!';
+    END IF;
+END$$
+DELIMITER ;
+
+-- Proteksi edit node (mutlak)
+DROP TRIGGER IF EXISTS prevent_update_node;
+DELIMITER $$
+CREATE TRIGGER prevent_update_node
+BEFORE UPDATE ON nodes
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = '❌ Edit Node dilarang!';
+END$$
+DELIMITER ;
+
 SQL
 
-echo "✅ Proteksi berhasil dipasang!"
+echo "✅ Proteksi berhasil dipasang. Skrip selesai."
